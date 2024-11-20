@@ -1,0 +1,71 @@
+org: yakubu
+service: backend-archive
+
+stages:
+  default:
+    params:
+      itemTable: "item-table-${sls:stage}"
+      itemArchiveBucket: "item-archive-${sls:stage}"
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  memorySize: 512
+  timeout: 10
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:Query
+            - dynamodb:Scan
+            - dynamodb:DeleteItem
+            - s3:PutObject
+          Resource: "*"
+  environment:
+    ITEM_TABLE: ${param:itemTable}
+    ITEM_ARCHIVE_BUCKET: ${param:itemArchiveBucket}
+
+  httpApi:
+    cors: true
+
+functions:
+  archiveItem:
+    handler: src/item/item.archiveItem
+    events:
+      - schedule:
+          rate: rate(1 day) # Runs daily
+          input:
+            tableName: ${param:itemTable}
+
+resources:
+  Resources:
+    ItemTable:
+      Type: AWS::DynamoDB::Table
+      DeletionPolicy: Retain
+      Properties:
+        AttributeDefinitions:
+          - AttributeName: itemId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: itemId
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST
+        TableName: ${param:itemTable}
+    ArchiveBucket:
+      Type: AWS::S3::Bucket
+      DeletionPolicy: Retain
+      Properties:
+        BucketName: ${param:itemArchiveBucket}
+
+custom:
+  serverless-dynamodb:
+    stages:
+      - dev
+    start:
+      port: 8000
+      inMemory: true
+
+plugins:
+  - serverless-dynamodb
+  - serverless-offline
